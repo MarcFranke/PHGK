@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulation Kraftmessgerät</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f8ff;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #1a5276;
+            margin-bottom: 20px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        .main-container {
+            display: flex;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            gap: 20px;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border-right: 1px solid #ddd;
+        }
+        .charge-source {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            font-weight: bold;
+            color: white;
+            cursor: grab;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+        .charge-source:active {
+            transform: scale(1.1);
+        }
+        #positive-charge {
+            background-color: #e74c3c;
+        }
+        #negative-charge {
+            background-color: #3498db;
+        }
+        .reset-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: background-color 0.3s;
+        }
+        .reset-btn:hover {
+            background-color: #c0392b;
+        }
+        #canvas-container {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+    <h1>Simulation Kraftmessgerät</h1>
+    <div class="main-container">
+        <div class="controls">
+            <span>Ladung hinzufügen:</span>
+            <div id="positive-charge" class="charge-source" draggable="true" data-type="positive">+</div>
+            <div id="negative-charge" class="charge-source" draggable="true" data-type="negative">-</div>
+            <button id="reset-btn" class="reset-btn">Zurücksetzen</button>
+        </div>
+        <div id="canvas-container"></div>
+    </div>
+    <script>
+        let charges = [];
+        let probe;
+        let isDraggingProbe = false;
+        let isDraggingCharge = false;
+        let draggedChargeType = null;
+        const k = 8.99e9;
+        const chargeRadius = 15;
+        const probeRadius = 10;
+        const canvasSize = { width: 800, height: 500 };
+
+        function setup() {
+            let canvas = createCanvas(canvasSize.width, canvasSize.height);
+            canvas.parent('canvas-container');
+            probe = new Probe(width / 2, height / 2);
+
+            let canvasContainer = select('#canvas-container');
+            let positiveCharge = select('#positive-charge');
+            let negativeCharge = select('#negative-charge');
+            let resetButton = select('#reset-btn');
+
+            positiveCharge.elt.addEventListener('dragstart', (e) => {
+                isDraggingCharge = true;
+                draggedChargeType = 'positive';
+            });
+            negativeCharge.elt.addEventListener('dragstart', (e) => {
+                isDraggingCharge = true;
+                draggedChargeType = 'negative';
+            });
+
+            canvasContainer.elt.addEventListener('dragover', (e) => e.preventDefault());
+            canvasContainer.elt.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (isDraggingCharge) {
+                    let rect = e.target.getBoundingClientRect();
+                    let x = e.clientX - rect.left;
+                    let y = e.clientY - rect.top;
+                    let chargeValue = draggedChargeType === 'positive' ? 5e-6 : -5e-6;
+                    charges.push(new Charge(x, y, chargeValue));
+                    isDraggingCharge = false;
+                    draggedChargeType = null;
+                }
+            });
+
+            resetButton.mousePressed(() => {
+                charges = [];
+                probe.pos.x = width / 2;
+                probe.pos.y = height / 2;
+            });
+        }
+
+        function mousePressed() {
+            if (dist(mouseX, mouseY, probe.pos.x, probe.pos.y) < probeRadius) {
+                isDraggingProbe = true;
+            }
+        }
+
+        function mouseDragged() {
+            if (isDraggingProbe) {
+                probe.pos.x = mouseX;
+                probe.pos.y = mouseY;
+            }
+        }
+
+        function mouseReleased() {
+            isDraggingProbe = false;
+        }
+
+        function draw() {
+            background(255);
+            for (let charge of charges) {
+                charge.show();
+            }
+            let netForce = createVector(0, 0);
+            for (let charge of charges) {
+                let force = calculateForce(probe.pos, probe.charge, charge.pos, charge.charge);
+                netForce.add(force);
+            }
+            probe.show(netForce);
+        }
+
+        function calculateForce(p1, q1, p2, q2) {
+            let r = p5.Vector.sub(p1, p2);
+            let rMagSq = r.magSq();
+            if (rMagSq < 100) rMagSq = 100;
+            let F = (k * q1 * q2) / rMagSq;
+            return r.normalize().mult(F);
+        }
+
+        class Charge {
+            constructor(x, y, q) {
+                this.pos = createVector(x, y);
+                this.charge = q;
+            }
+            show() {
+                noStroke();
+                fill(this.charge > 0 ? '#e74c3c' : '#3498db');
+                ellipse(this.pos.x, this.pos.y, chargeRadius * 2, chargeRadius * 2);
+                fill(255);
+                textAlign(CENTER, CENTER);
+                textSize(16);
+                text(this.charge > 0 ? '+' : '-', this.pos.x, this.pos.y);
+            }
+        }
+
+        class Probe extends Charge {
+            constructor(x, y) {
+                super(x, y, 1e-6);
+            }
+            show(forceVector) {
+                stroke(50);
+                strokeWeight(1.5);
+                fill(255, 255, 100);
+                ellipse(this.pos.x, this.pos.y, probeRadius * 2, probeRadius * 2);
+                if (forceVector.mag() > 0) {
+                    let forceDisplayLength = map(forceVector.mag(), 0, 0.05, 10, 10000); 
+                    let endPos = p5.Vector.add(this.pos, forceVector.normalize().mult(forceDisplayLength));
+                    drawArrow(this.pos, endPos, 8, 20, color(0, 150, 0));
+                }
+            }
+        }
+
+        function drawArrow(base, vec, headLength, headWidth, arrowColor) {
+            push();
+            stroke(arrowColor);
+            strokeWeight(4);
+            line(base.x, base.y, vec.x, vec.y);
+            let angle = atan2(vec.y - base.y, vec.x - base.x);
+            translate(vec.x, vec.y);
+            rotate(angle);
+            fill(arrowColor);
+            noStroke();
+            triangle(0, -headWidth/2, 0, headWidth/2, headLength, 0);
+            pop();
+        }
+    </script>
+</body>
+</html>

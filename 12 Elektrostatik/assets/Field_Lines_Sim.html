@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Verbesserte E-Feld Simulation V12</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f8ff;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #1a5276;
+            margin-bottom: 20px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        .main-container {
+            display: flex;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            gap: 20px;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border-right: 1px solid #ddd;
+        }
+        .charge-source {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            font-weight: bold;
+            color: white;
+            cursor: grab;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+        .charge-source:active {
+            transform: scale(1.1);
+        }
+        #positive-charge {
+            background-color: #e74c3c;
+        }
+        #negative-charge {
+            background-color: #3498db;
+        }
+        .action-btn {
+            background-color: #1abc9c;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: background-color 0.3s;
+        }
+        .action-btn:hover {
+            background-color: #16a085;
+        }
+        #reset-btn {
+            background-color: #e74c3c;
+        }
+        #reset-btn:hover {
+            background-color: #c0392b;
+        }
+        #canvas-container {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+    <h1>Interaktive E-Feld Simulation</h1>
+    <div class="main-container">
+        <div class="controls">
+            <span>Ladung hinzufügen:</span>
+            <div id="positive-charge" class="charge-source" draggable="true" data-type="positive">+</div>
+            <div id="negative-charge" class="charge-source" draggable="true" data-type="negative">-</div>
+            <button id="trail-btn" class="action-btn">Spur hinterlassen: AUS</button>
+            <button id="reset-btn" class="action-btn">Zurücksetzen</button>
+        </div>
+        <div id="canvas-container"></div>
+    </div>
+    <script>
+        let charges = [];
+        let probe;
+        let isDraggingProbe = false;
+        let isDraggingCharge = false;
+        let draggedChargeType = null;
+        let drawTrail = false;
+        let trailGraphics; // p5.Graphics buffer for the trail
+        let lastTrailPosition; // Stores the position of the last drawn trail arrow
+
+        const k = 8.99e9;
+        const chargeRadius = 15;
+        const probeRadius = 10;
+        const canvasSize = { width: 800, height: 500 };
+        const minMoveDistance = 1; // Minimum distance in pixels to draw a new trail arrow
+
+        function setup() {
+            let canvas = createCanvas(canvasSize.width, canvasSize.height);
+            canvas.parent('canvas-container');
+            trailGraphics = createGraphics(canvasSize.width, canvasSize.height);
+            probe = new Probe(width / 2, height / 2);
+            lastTrailPosition = createVector(probe.pos.x, probe.pos.y);
+
+            let canvasContainer = select('#canvas-container');
+            let positiveCharge = select('#positive-charge');
+            let negativeCharge = select('#negative-charge');
+            let resetButton = select('#reset-btn');
+            let trailButton = select('#trail-btn');
+
+            positiveCharge.elt.addEventListener('dragstart', (e) => {
+                isDraggingCharge = true;
+                draggedChargeType = 'positive';
+            });
+            negativeCharge.elt.addEventListener('dragstart', (e) => {
+                isDraggingCharge = true;
+                draggedChargeType = 'negative';
+            });
+
+            canvasContainer.elt.addEventListener('dragover', (e) => e.preventDefault());
+            canvasContainer.elt.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (isDraggingCharge) {
+                    let rect = e.target.getBoundingClientRect();
+                    let x = e.clientX - rect.left;
+                    let y = e.clientY - rect.top;
+                    let chargeValue = draggedChargeType === 'positive' ? 5e-6 : -5e-6;
+                    charges.push(new Charge(x, y, chargeValue));
+                    isDraggingCharge = false;
+                    draggedChargeType = null;
+                }
+            });
+
+            resetButton.mousePressed(() => {
+                charges = [];
+                probe.pos.x = width / 2;
+                probe.pos.y = height / 2;
+                lastTrailPosition = createVector(probe.pos.x, probe.pos.y);
+                background(255);
+                trailGraphics.background(255);
+            });
+
+            trailButton.mousePressed(() => {
+                drawTrail = !drawTrail;
+                trailButton.html(`Spur hinterlassen: ${drawTrail ? 'AN' : 'AUS'}`);
+                if (!drawTrail) {
+                    background(255);
+                    trailGraphics.background(255);
+                }
+            });
+        }
+
+        function mousePressed() {
+            if (dist(mouseX, mouseY, probe.pos.x, probe.pos.y) < probeRadius) {
+                isDraggingProbe = true;
+            }
+        }
+
+        function mouseDragged() {
+            if (isDraggingProbe) {
+                probe.pos.x = mouseX;
+                probe.pos.y = mouseY;
+            }
+        }
+
+        function mouseReleased() {
+            isDraggingProbe = false;
+        }
+
+        function draw() {
+            // Draw the base background
+            background(255);
+
+            // Draw the fading trail on the off-screen buffer
+            if (drawTrail) {
+                trailGraphics.noStroke();
+                trailGraphics.fill(255, 255, 255, 10);
+                trailGraphics.rect(0, 0, width, height);
+
+                // Calculate the force and check if we've moved enough to draw a new trail arrow
+                let netForce = createVector(0, 0);
+                for (let charge of charges) {
+                    let force = calculateForce(probe.pos, probe.charge, charge.pos, charge.charge);
+                    netForce.add(force);
+                }
+
+                if (dist(probe.pos.x, probe.pos.y, lastTrailPosition.x, lastTrailPosition.y) > minMoveDistance) {
+                    if (netForce.mag() > 0) {
+                        let forceDisplayLength = map(netForce.mag(), 0, 0.005, 20, 2500); 
+                        let endPos = p5.Vector.add(probe.pos, netForce.normalize().mult(forceDisplayLength));
+                        drawArrow(probe.pos, endPos, 8, 20, color(0, 150, 0, 50), trailGraphics);
+                    }
+                    lastTrailPosition.set(probe.pos.x, probe.pos.y); // Update last position
+                }
+            }
+            
+            // Display the trail buffer on the main canvas
+            image(trailGraphics, 0, 0);
+
+            // Draw all charges and the crisp probe on top of everything
+            for (let charge of charges) {
+                charge.show();
+            }
+            probe.show();
+        }
+
+        function calculateForce(p1, q1, p2, q2) {
+            let r = p5.Vector.sub(p1, p2);
+            let rMagSq = r.magSq();
+            if (rMagSq < 100) rMagSq = 100;
+            let F = (k * q1 * q2) / rMagSq;
+            return r.normalize().mult(F);
+        }
+
+        class Charge {
+            constructor(x, y, q) {
+                this.pos = createVector(x, y);
+                this.charge = q;
+            }
+            show() {
+                noStroke();
+                fill(this.charge > 0 ? '#e74c3c' : '#3498db');
+                ellipse(this.pos.x, this.pos.y, chargeRadius * 2, chargeRadius * 2);
+                fill(255);
+                textAlign(CENTER, CENTER);
+                textSize(16);
+                text(this.charge > 0 ? '+' : '-', this.pos.x, this.pos.y);
+            }
+        }
+
+        class Probe extends Charge {
+            constructor(x, y) {
+                super(x, y, 1e-6);
+            }
+
+            show() {
+                stroke(50);
+                strokeWeight(1.5);
+                fill(255, 255, 100);
+                ellipse(this.pos.x, this.pos.y, probeRadius * 2, probeRadius * 2);
+
+                let netForce = createVector(0, 0);
+                for (let charge of charges) {
+                    let force = calculateForce(this.pos, this.charge, charge.pos, charge.charge);
+                    netForce.add(force);
+                }
+
+                if (netForce.mag() > 0) {
+                    let forceDisplayLength = map(netForce.mag(), 0, 0.005, 20, 2500); 
+                    let endPos = p5.Vector.add(this.pos, netForce.normalize().mult(forceDisplayLength));
+                    drawArrow(this.pos, endPos, 8, 20, color(0, 150, 0)); // Draw the crisp arrow
+                }
+            }
+        }
+
+        function drawArrow(base, vec, headLength, headWidth, arrowColor, target) {
+            if (target === undefined) {
+                target = window;
+            }
+            target.push();
+            target.stroke(arrowColor);
+            target.strokeWeight(4);
+            target.line(base.x, base.y, vec.x, vec.y);
+            let angle = atan2(vec.y - base.y, vec.x - base.x);
+            target.translate(vec.x, vec.y);
+            target.rotate(angle);
+            target.fill(arrowColor);
+            target.noStroke();
+            target.triangle(0, -headWidth/2, 0, headWidth/2, headLength, 0);
+            target.pop();
+        }
+    </script>
+</body>
+</html>

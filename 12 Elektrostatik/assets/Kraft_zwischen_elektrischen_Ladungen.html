@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Kraft zwischen Teilchen</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #e6f2ff; /* Helle Himmelsblau */
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2a618e; /* Dunkleres Blau */
+            margin-bottom: 25px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        .main-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 25px;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding: 15px;
+            border-right: 1px solid #eee;
+        }
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 5px;
+        }
+        label {
+            font-weight: bold;
+            color: #444;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        input[type="range"] {
+            width: 180px;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff; /* Blau für den Schieber */
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .slider-container span {
+            margin-top: 8px;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #007bff; /* Blau für Werte */
+        }
+        #canvas-container {
+            border: 1px solid #ddd;
+            background-color: #fcfcfc;
+            border-radius: 8px;
+            overflow: hidden; /* Stellt sicher, dass nichts über den Rand geht */
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+    <h1>Kraft zwischen Teilchen</h1>
+    <div class="main-container">
+        <div class="controls">
+            <div class="slider-container">
+                <label for="q1-slider">Ladung q1 (in µC):</label>
+                <input type="range" id="q1-slider" min="-10" max="10" step="0.1" value="5">
+                <span id="q1-value">5.0</span>
+            </div>
+            <div class="slider-container">
+                <label for="q2-slider">Ladung q2 (in µC):</label>
+                <input type="range" id="q2-slider" min="-10" max="10" step="0.1" value="5">
+                <span id="q2-value">5.0</span>
+            </div>
+            <div class="slider-container">
+                <label for="r-slider">Abstand r (in cm):</label>
+                <input type="range" id="r-slider" min="50" max="400" step="1" value="200">
+                <span id="r-value">200</span>
+            </div>
+        </div>
+        <div id="canvas-container"></div>
+    </div>
+    <script>
+        let q1, q2, r;
+        const k = 8.99e9;
+        let q1Slider, q2Slider, rSlider;
+        let q1ValueSpan, q2ValueSpan, rValueSpan;
+
+        const chargeRadius = 20; // Größe der geladenen Teilchen
+        const arrowOffset = 25; // Abstand der Pfeile von der Mitte der Ladung
+
+        function setup() {
+            let canvas = createCanvas(650, 400); // Etwas breiter für Pfeile
+            canvas.parent('canvas-container');
+            q1Slider = select('#q1-slider');
+            q2Slider = select('#q2-slider');
+            rSlider = select('#r-slider');
+            q1ValueSpan = select('#q1-value');
+            q2ValueSpan = select('#q2-value');
+            rValueSpan = select('#r-value');
+            q1Slider.changed(updateValues);
+            q2Slider.changed(updateValues);
+            rSlider.changed(updateValues);
+            updateValues();
+        }
+
+        function updateValues() {
+            q1 = parseFloat(q1Slider.value()) * 1e-6;
+            q2 = parseFloat(q2Slider.value()) * 1e-6;
+            r = parseFloat(rSlider.value()) / 100;
+            q1ValueSpan.html(q1Slider.value());
+            q2ValueSpan.html(q2Slider.value());
+            rValueSpan.html(rSlider.value());
+        }
+
+        function draw() {
+            background(250, 250, 255); // Sehr helles Blau
+            let x1 = width / 2 - (r / 2) * 100;
+            let y = height / 2;
+            let x2 = width / 2 + (r / 2) * 100;
+
+            drawCharge(x1, y, q1);
+            drawCharge(x2, y, q2);
+
+            let forceMagnitude = (k * abs(q1 * q2)) / (r * r);
+            let forceText = `F = ${nf(forceMagnitude, 0, 2)} N`;
+            let forceVectorLength = map(forceMagnitude, 0, 0.05, 0, 150); // Skalierung angepasst
+
+            // Pfeile zeichnen
+            if (q1 * q2 > 0) { // Abstoßende Kraft
+                drawArrow(x1 + (q1 > 0 ? -arrowOffset : arrowOffset), y, x1 - forceVectorLength - arrowOffset, y, color(255, 60, 60)); // Rötlich für Abstoßung
+                drawArrow(x2 + (q2 > 0 ? arrowOffset : -arrowOffset), y, x2 + forceVectorLength + arrowOffset, y, color(255, 60, 60));
+            } else if (q1 * q2 < 0) { // Anziehende Kraft
+                drawArrow(x1 + arrowOffset, y, x1 + forceVectorLength + arrowOffset, y, color(60, 60, 255)); // Bläulich für Anziehung
+                drawArrow(x2 - arrowOffset, y, x2 - forceVectorLength - arrowOffset, y, color(60, 60, 255));
+            }
+            
+            // Kraftwert und Abstand anzeigen
+            fill(50);
+            noStroke();
+            textSize(18);
+            textAlign(CENTER);
+            text(forceText, width / 2, height - 30);
+            
+            stroke(150);
+            strokeWeight(1);
+            line(x1, y + 25, x2, y + 25);
+            noStroke();
+            fill(50);
+            text(`${nf(rSlider.value(), 0, 0)} cm`, width/2, y + 45);
+        }
+
+        function drawCharge(x, y, charge) {
+            let chargeColor;
+            if (charge > 0) {
+                chargeColor = color(255, 100, 100); // Helles Rot für positive Ladung
+            } else if (charge < 0) {
+                chargeColor = color(100, 100, 255); // Helles Blau für negative Ladung
+            } else {
+                chargeColor = color(180, 180, 180); // Grau für neutrale Ladung
+            }
+            
+            // Mit Verlauf für "3D"-Effekt
+            let gradient = drawingContext.createRadialGradient(x - chargeRadius * 0.3, y - chargeRadius * 0.3, 0, x, y, chargeRadius);
+            gradient.addColorStop(0, color(255, 255, 255, 200)); // Heller Punkt
+            gradient.addColorStop(1, chargeColor);
+            drawingContext.fillStyle = gradient;
+
+            stroke(50); // Dunklerer Rand für die Ladung
+            strokeWeight(1.5);
+            ellipse(x, y, chargeRadius * 2, chargeRadius * 2);
+
+            fill(255);
+            noStroke();
+            textSize(22); // Größerer Text für + / -
+            textAlign(CENTER, CENTER);
+            text(charge > 0 ? '+' : (charge < 0 ? '-' : '0'), x, y);
+        }
+
+        function drawArrow(x1, y1, x2, y2, color) {
+            stroke(color);
+            strokeWeight(3); // Dickere Pfeile
+            line(x1, y1, x2, y2);
+            push();
+            translate(x2, y2);
+            let angle = atan2(y2 - y1, x2 - x1);
+            rotate(angle);
+            noStroke();
+            fill(color);
+            triangle(-12, 6, -12, -6, 0, 0); // Größere Pfeilspitze
+            pop();
+        }
+    </script>
+</body>
+</html>
